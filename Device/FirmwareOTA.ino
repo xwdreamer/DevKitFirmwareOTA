@@ -10,7 +10,7 @@
 
 static bool hasWifi = false;
 // This string is hard-coded for firmware comparision in the example. In practice, user can call getDevkitVersion() to get the version of current firmware.
-const char* currentFirmwareVersion = "1.1.1"
+const char* currentFirmwareVersion = "1.1.1";
 
 // Get the current time in YYYY-MM-DD-HH:MM:SS format
 char *getTimeStamp()
