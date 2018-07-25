@@ -230,6 +230,7 @@ void setup()
   DevKitMQTTClient_SetOption(OPTION_MINI_SOLUTION_NAME, "FirmwareOTA");
   DevKitMQTTClient_Init(true);
   
+  LogInfo("FirmwareOTA demo: %s", currentFirmwareVersion);
   // Report OTA status
   ReportOTAStatus(currentFirmwareVersion, NULL, OTA_STATUS_CURRENT, NULL, NULL, NULL);
 }
