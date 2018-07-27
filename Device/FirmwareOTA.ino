@@ -180,7 +180,7 @@ static void CheckNewFirmware(void)
     }
   }
   
-  // Couting down and reboot
+  // Counting down and reboot
   Screen.clean();
   Screen.print(0, "Reboot system");
   LogInfo("Reboot system to apply the new firmware:");
