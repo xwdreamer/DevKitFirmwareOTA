@@ -5,7 +5,7 @@
 #include "AzureIotHub.h"
 #include "DevKitMQTTClient.h"
 #include "DevKitOTAUtils.h"
-#include "OTAUpdateClient.h"
+#include "OTAFirmwareUpdate.h"
 #include "SystemTime.h"
 
 static char* currentFirmwareVersion = "1.0.0";
@@ -38,7 +38,7 @@ static void InitWifi()
 }
 
 // Report the OTA update status to Azure
-static void ReportOTAStatus(char* currentFwVersion, char* pendingFwVersion, char* fwUpdateStatus, char* fwUpdateSubstatus, char* lastFwUpdateStartTime, char* lastFwUpdateEndTime)
+static void ReportOTAStatus(const char* currentFwVersion, const char* pendingFwVersion, const char* fwUpdateStatus, const char* fwUpdateSubstatus, const char* lastFwUpdateStartTime, const char* lastFwUpdateEndTime)
 {
   OTAStatusMap = Map_Create(NULL);
   if (currentFwVersion)
@@ -72,11 +72,11 @@ static void ReportOTAStatus(char* currentFwVersion, char* pendingFwVersion, char
 // Enter a failed state, print failed message and report status
 static void OTAUpdateFailed(const char* failedMsg)
 {
-  ReportOTAStatus(currentFirmwareVersion, fwInfo ? fwInfo->fwVersion : NULL, OTA_STATUS_ERROR, (char*)failedMsg, NULL, NULL);
+  ReportOTAStatus(currentFirmwareVersion, fwInfo ? fwInfo->fwVersion : "", OTA_STATUS_ERROR, failedMsg, "", "");
   enableOTA = false;
-  Screen.print(1, "OTA error:");
+  Screen.print(1, "OTA failed:");
   Screen.print(2, failedMsg);
-  Screen.print(3, "Stop checking.");
+  Screen.print(3, "");
   LogInfo("Failed to update firmware %s: %s, disable OTA update.", fwInfo ? fwInfo->fwVersion : "<unknown>", failedMsg);
 }
 
@@ -87,11 +87,7 @@ static void CheckNewFirmware(void)
   {
     return;
   }
-
-  char timeStr[30];
-  time_t t = time(NULL);
-  strftime(timeStr, 30, "%Y-%m-%d-%R:%S", gmtime(&t));
-
+    
   // Check if there is new firmware info.
   fwInfo = IoTHubClient_GetLatestFwInfo();
   if (fwInfo == NULL)
@@ -134,39 +130,47 @@ static void CheckNewFirmware(void)
   Screen.print(3, " downloading...");
   LogInfo(">> Downloading from %s...", fwInfo->fwPackageURI);
   // Report downloading status.
-  ReportOTAStatus(currentFirmwareVersion, fwInfo->fwVersion, OTA_STATUS_DOWNLOADING, fwInfo->fwPackageURI, timeStr, NULL);
+  char startTimeStr[30];
+  time_t t = time(NULL);
+  strftime(startTimeStr, 30, "%Y-%m-%dT%H:%M:%S.0000000Z", gmtime(&t));
+  ReportOTAStatus(currentFirmwareVersion, fwInfo->fwVersion, OTA_STATUS_DOWNLOADING, fwInfo->fwPackageURI, startTimeStr, "");
   
   // Download the firmware. This can be customized according to the board type.
-  OTAUpdateClient& otaClient = OTAUpdateClient::getInstance();
-  int result = otaClient.updateFromUrl(fwInfo->fwPackageURI);
-  if (result == 0)
+  uint16_t checksum = 0;
+  int fwSize = OTADownloadFirmware(fwInfo->fwPackageURI, &checksum);
+
+  // Reopen the IoT Hub Client for reporting status.
+  DevKitMQTTClient_Init(true);
+
+  // Check result
+  if (fwSize == 0 || fwSize == -1)
   {
     // Report error status, DownloadFailed
     OTAUpdateFailed("DownloadFailed");
     return;
   }
-  if (result != fwInfo->fwSize)
+  else if (fwSize == -2)
+  {
+    // Report error status, DeviceError
+    OTAUpdateFailed("DeviceError");
+    return;
+  }
+  else if (fwSize != fwInfo->fwSize)
   {
     // Report error status, FileSizeNotMatch
     OTAUpdateFailed("FileSizeNotMatch");
     return;
   }
   
-  Screen.print(3, " done.");
-  LogInfo(">> done.");
-          
-  // Reopen the IoT Hub Client for reporting status.
-  DevKitMQTTClient_Init(true);
+  Screen.print(3, " Finished.");
+  LogInfo(">> Finished download.");
 
-  // Check the firmware if there is checksum.
+  // CRC check
   if (fwInfo->fwPackageCheckValue != NULL)
   {
     Screen.print(3, " verifying...");
 
-    // Report status
-    ReportOTAStatus(currentFirmwareVersion, fwInfo->fwVersion, OTA_STATUS_VERIFYING, fwInfo->fwPackageCheckValue, NULL, NULL);
-    
-    if (otaClient.calculateFirmwareCRC16(fwInfo->fwSize) == strtoul(fwInfo->fwPackageCheckValue, NULL, 16))
+    if (checksum == strtoul(fwInfo->fwPackageCheckValue, NULL, 16))
     {
       Screen.print(3, " passed.");
       LogInfo(">> CRC check passed.");
@@ -179,6 +183,20 @@ static void CheckNewFirmware(void)
       return;
     }
   }
+
+  // Applying
+  if (OTAApplyNewFirmware(fwSize, checksum) != 0)
+  {
+    // Report error status, ApplyFirmwareFailed
+      OTAUpdateFailed("ApplyFirmwareFailed");
+      Screen.print(3, " Apply failed.");
+      return;
+  }
+  // Report status
+  char endTimeStr[30];
+  t = time(NULL);
+  strftime(endTimeStr, 30, "%Y-%m-%dT%H:%M:%S.0000000Z", gmtime(&t));
+  ReportOTAStatus(currentFirmwareVersion, fwInfo->fwVersion, OTA_STATUS_APPLYING, "", startTimeStr, endTimeStr);
   
   // Counting down and reboot
   Screen.clean();
@@ -193,12 +211,8 @@ static void CheckNewFirmware(void)
     delay(1000);
   }
   
-  // Report status
-  t = time(NULL);
-  strftime(timeStr, 30, "%Y-%m-%d-%R:%S", gmtime(&t));
-  ReportOTAStatus(currentFirmwareVersion, fwInfo->fwVersion, OTA_STATUS_APPLYING, NULL, NULL, timeStr);
   // Reboot system to apply the firmware.
-  mico_system_reboot();
+  SystemReboot();
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -232,7 +246,7 @@ void setup()
   
   LogInfo("FirmwareOTA demo: %s", currentFirmwareVersion);
   // Report OTA status
-  ReportOTAStatus(currentFirmwareVersion, NULL, OTA_STATUS_CURRENT, NULL, NULL, NULL);
+  ReportOTAStatus(currentFirmwareVersion, "", OTA_STATUS_CURRENT, "", NULL, NULL);
 }
 
 void loop()
@@ -243,6 +257,8 @@ void loop()
 
     // Check for new firmware
     CheckNewFirmware();
+
+    LogInfo("No new firmware...");
   }
   delay(1000);
 }
