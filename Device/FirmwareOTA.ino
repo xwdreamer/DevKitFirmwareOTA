@@ -77,7 +77,7 @@ static void OTAUpdateFailed(const char* failedMsg)
   enableOTA = false;
   Screen.print(1, "OTA failed:");
   Screen.print(2, failedMsg);
-  Screen.print(3, "");
+  Screen.print(3, " ");
   LogInfo("Failed to update firmware %s: %s, disable OTA update.", fwInfo ? fwInfo->fwVersion : "<unknown>", failedMsg);
 }
 
