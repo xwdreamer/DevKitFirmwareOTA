@@ -41,6 +41,7 @@ static void InitWifi()
 static void ReportOTAStatus(const char* currentFwVersion, const char* pendingFwVersion, const char* fwUpdateStatus, const char* fwUpdateSubstatus, const char* lastFwUpdateStartTime, const char* lastFwUpdateEndTime)
 {
   OTAStatusMap = Map_Create(NULL);
+  Map_Add(OTAStatusMap, "type", "IoTDevKit"); // The type of the firmware
   if (currentFwVersion)
   {
     Map_Add(OTAStatusMap, OTA_CURRENT_FW_VERSION, currentFwVersion);
@@ -88,7 +89,7 @@ static void CheckNewFirmware(void)
     return;
   }
     
-  // Check if there is new firmware info.
+  // Check if there has new firmware info.
   fwInfo = IoTHubClient_GetLatestFwInfo();
   if (fwInfo == NULL)
   {
@@ -124,9 +125,6 @@ static void CheckNewFirmware(void)
   Screen.print(2, fwInfo->fwVersion);
   LogInfo("New firmware is available: %s.", fwInfo->fwVersion);
   
-  // Close IoT Hub Client to release the TLS resource for firmware download.
-  DevKitMQTTClient_Close();
-
   Screen.print(3, " downloading...");
   LogInfo(">> Downloading from %s...", fwInfo->fwPackageURI);
   // Report downloading status.
@@ -135,6 +133,8 @@ static void CheckNewFirmware(void)
   strftime(startTimeStr, 30, "%Y-%m-%dT%H:%M:%S.0000000Z", gmtime(&t));
   ReportOTAStatus(currentFirmwareVersion, fwInfo->fwVersion, OTA_STATUS_DOWNLOADING, fwInfo->fwPackageURI, startTimeStr, "");
   
+  // Close IoT Hub Client to release the TLS resource for firmware download.
+  DevKitMQTTClient_Close();
   // Download the firmware. This can be customized according to the board type.
   uint16_t checksum = 0;
   int fwSize = OTADownloadFirmware(fwInfo->fwPackageURI, &checksum);
