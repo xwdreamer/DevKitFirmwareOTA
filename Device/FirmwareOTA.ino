@@ -188,9 +188,9 @@ static void CheckNewFirmware(void)
   if (OTAApplyNewFirmware(fwSize, checksum) != 0)
   {
     // Report error status, ApplyFirmwareFailed
-      OTAUpdateFailed("ApplyFirmwareFailed");
-      Screen.print(3, " Apply failed.");
-      return;
+    OTAUpdateFailed("ApplyFirmwareFailed");
+    Screen.print(3, " Apply failed.");
+    return;
   }
   // Report status
   char endTimeStr[30];
