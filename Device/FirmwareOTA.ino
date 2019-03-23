@@ -8,7 +8,7 @@
 #include "OTAFirmwareUpdate.h"
 #include "SystemTime.h"
 
-static char* currentFirmwareVersion = "1.0.0";
+static const char* currentFirmwareVersion = "1.0.0";
 
 static bool hasWifi = false;
 
